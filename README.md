@@ -11,18 +11,16 @@ A personal workout and body-composition tracker that installs on your iPhone Hom
 | `js/app.js` | Screens, workout logging, templates, progress, backup |
 | `js/db.js` | On-device database (IndexedDB) with versioned migrations |
 | `js/data.js` | Exercise database: 250 exercises with families, variations, muscles, instructions |
-| `js/musclemap.js` | Original front/back muscle diagrams, drawn in code |
 | `js/charts.js` | Charts (no outside library) |
 | `sw.js` | Service worker: makes LiftLog work offline |
 | `manifest.webmanifest`, `icons/` | Home Screen install settings and icons |
-| `exercises/` | Where your exercise illustrations go (see `exercises/README.md`) |
 
 ## Put it on GitHub (no terminal needed)
 
 1. Sign in at github.com, click **+** (top right), then **New repository**.
 2. Name it `liftlog`, choose **Public**, and click **Create repository**.
 3. On the new page, click **uploading an existing file**.
-4. Unzip `liftlog.zip` on your computer. Open the `liftlog` folder, select **everything inside it** (including the `css`, `js`, `icons` and `exercises` folders), and drag it into the browser window.
+4. Unzip `liftlog.zip` on your computer. Open the `liftlog` folder, select **everything inside it** (including the `css`, `js` and `icons` folders), and drag it into the browser window.
 5. Click **Commit changes**.
 6. Go to **Settings**, then **Pages** (left sidebar). Under **Build and deployment**, set **Source** to **Deploy from a branch**, **Branch** to `main`, folder `/ (root)`, and click **Save**.
 7. Wait 1–2 minutes. Your app will be at `https://YOUR-USERNAME.github.io/liftlog/`.
@@ -60,6 +58,14 @@ Important:
 - Deleting LiftLog from your Home Screen deletes its data.
 - **Back up regularly:** More → Data & backup → **Export full backup**. Save the file to iCloud Drive or Files. To restore, choose **Import backup**. LiftLog shows what the file contains and asks before replacing anything, and keeps a copy of your previous data so you can undo the import.
 - CSV exports (body measurements, workout history, every set) open in Excel or Numbers.
+
+## Logging a workout
+
+1. Start a template or an empty workout.
+2. Tap **Add exercise**. Tap **Add** next to any exercise, or type any name and tap **Add “…” as a new exercise**.
+3. Use the **Sets − / +** control on each exercise to choose how many sets you're doing.
+4. Type the weight and reps you completed for each set, then tap the check mark. Faint numbers are what you did last time, shown for reference only.
+5. Tap **Finish** when you're done.
 
 ## Trying it out
 

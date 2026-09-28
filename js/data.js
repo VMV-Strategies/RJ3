@@ -9,16 +9,9 @@ export const MUSCLES = {
   frontDelts: 'Front delts', sideDelts: 'Side delts', rearDelts: 'Rear delts',
   biceps: 'Biceps', triceps: 'Triceps', forearms: 'Forearms',
   quads: 'Quadriceps', hamstrings: 'Hamstrings', glutes: 'Glutes', adductors: 'Adductors', abductors: 'Abductors',
-  calves: 'Calves', tibialis: 'Tibialis', abs: 'Abs', obliques: 'Obliques', core: 'Core', fullBody: 'Full body',
+  calves: 'Calves', tibialis: 'Tibialis', abs: 'Abs', obliques: 'Obliques', core: 'Core', fullBody: 'Full body', other: 'Other',
 };
 
-const REGION = {
-  chest: 'chest', lats: 'back', upperBack: 'back', lowerBack: 'back', traps: 'back',
-  frontDelts: 'shoulders', sideDelts: 'shoulders', rearDelts: 'shoulders',
-  biceps: 'arms', triceps: 'arms', forearms: 'arms',
-  quads: 'legs', hamstrings: 'legs', glutes: 'legs', adductors: 'legs', abductors: 'legs', calves: 'legs', tibialis: 'legs',
-  abs: 'core', obliques: 'core', core: 'core', fullBody: 'full-body',
-};
 
 export const EQUIP = {
   BB: 'Barbell', DB: 'Dumbbell', CB: 'Cable', SM: 'Selectorized machine', PL: 'Plate-loaded machine',
@@ -45,6 +38,7 @@ export const FILTER_GROUPS = [
   ['calves', 'Calves', ['calves', 'tibialis']],
   ['hips', 'Adductors/Abductors', ['adductors', 'abductors']],
   ['full', 'Full body', ['fullBody']],
+  ['other', 'Other', ['other']],
 ];
 
 const P = (label, steps, tips) => ({ label, steps, tips });
@@ -412,7 +406,6 @@ function parse(line) {
     instructions: [...extra, ...p.steps],
     tips,
     builtIn: true,
-    assetPath: `exercises/${REGION[primary]}/${id}`,
   };
   e._s = searchText(e);
   return e;
@@ -421,4 +414,3 @@ function parse(line) {
 export const EXERCISES = RAW.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(parse);
 export const EX_BY_ID = Object.fromEntries(EXERCISES.map(e => [e.id, e]));
 if (Object.keys(EX_BY_ID).length !== EXERCISES.length) console.warn('LiftLog: duplicate exercise ids detected');
-export const ASSET_FRAMES = ['thumb', 'start', 'mid', 'end', 'muscles'];

@@ -1,7 +1,6 @@
 // LiftLog — main application
 import * as db from './db.js';
-import { EXERCISES, EX_BY_ID, MUSCLES, EQUIPMENT, FILTER_GROUPS, EXERCISE_DB_VERSION, ASSET_FRAMES, muscleLabel, searchText, describe, slug } from './data.js';
-import { muscleMapSVG, muscleThumb, resetThumbs } from './musclemap.js';
+import { EXERCISES, EX_BY_ID, MUSCLES, EQUIPMENT, FILTER_GROUPS, EXERCISE_DB_VERSION, muscleLabel, searchText, describe } from './data.js';
 import { lineChart } from './charts.js';
 
 const APP_VERSION = '1.0.0';
@@ -15,8 +14,8 @@ const SET_SHORT = { working: '', warmup: 'W', backoff: 'B', drop: 'D', failure: 
 const NO_LOAD_EQUIP = new Set(['Bodyweight', 'Weighted bodyweight', 'Resistance band']);
 
 const S = {
-  settings: { ...DEFAULTS }, meas: [], workouts: [], templates: [], custom: [], customMap: {}, images: {},
-  favs: new Set(), recents: [], assets: {}, session: null, snapshotAt: null,
+  settings: { ...DEFAULTS }, meas: [], workouts: [], templates: [], custom: [], customMap: {},
+  favs: new Set(), recents: [], session: null, snapshotAt: null,
   tab: 'today', wSeg: 'templates', pSeg: 'body',
   lib: { q: '', group: 'all', equip: '' }, bodyRange: '3M', bodyMA: true,
   stack: [], onbStep: 0, persisted: null, ready: false,
@@ -58,7 +57,7 @@ const ICON = {
   down: '<svg viewBox="0 0 24 24" class="i"><path d="M6 9l6 6 6-6"/></svg>',
   back: '<svg viewBox="0 0 24 24" class="i"><path d="M15 5l-7 7 7 7"/></svg>',
   star: '<svg viewBox="0 0 24 24" class="i"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9-4.3-4.1 5.9-.8z"/></svg>',
-  image: '<svg viewBox="0 0 24 24" class="i"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3.5"/></svg>',
+  info: '<svg viewBox="0 0 24 24" class="i"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg>',
   up: '<svg viewBox="0 0 24 24" class="i"><path d="M6 15l6-6 6 6"/></svg>',
   x: '<svg viewBox="0 0 24 24" class="i"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   dots: '<svg viewBox="0 0 24 24" class="i"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>',
@@ -105,23 +104,6 @@ const allExercises = () => EXERCISES.concat(S.custom.filter(c => !c.archived));
 const familyOf = e => allExercises().filter(x => x.family === e.family);
 const isTime = e => e.metric === 'time';
 
-function colors() {
-  const cs = getComputedStyle(document.documentElement);
-  const g = k => cs.getPropertyValue(k).trim();
-  return { body: g('--mm-body'), idle: g('--mm-idle'), pri: g('--mm-pri'), sec: g('--mm-sec') };
-}
-let colorCache = null;
-function assetURL(e, frame) {
-  if (!e.builtIn) return frame === 'thumb' || frame === 'start' ? S.images[e.id] || null : null;
-  const list = S.assets[e.id];
-  return list && list.includes(frame) ? `${e.assetPath}/${frame}.webp` : null;
-}
-function thumb(e, cls = 'thumb') {
-  const url = assetURL(e, 'thumb');
-  if (url) return `<img class="${cls}" src="${esc(url)}" alt="" loading="lazy" decoding="async">`;
-  colorCache ||= colors();
-  return `<img class="${cls} mm-thumb" src="${muscleThumb(e, colorCache)}" alt="" decoding="async">`;
-}
 
 // ---------- body composition
 const comp = m => (m && m.bf != null ? { fat: m.weight * m.bf / 100, lean: m.weight - m.weight * m.bf / 100 } : { fat: null, lean: null });
@@ -237,9 +219,9 @@ function saveSession(now) {
 function flushSession() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; saveSession(true); } }
 
 async function loadAll() {
-  const [settings, active, favs, recents, meas, workouts, templates, custom, images, snap] = await Promise.all([
+  const [settings, active, favs, recents, meas, workouts, templates, custom, snap] = await Promise.all([
     db.get('meta', 'settings'), db.get('meta', 'active'), db.get('meta', 'favorites'), db.get('meta', 'recents'),
-    db.getAll('measurements'), db.getAll('workouts'), db.getAll('templates'), db.getAll('customExercises'), db.entries('images'),
+    db.getAll('measurements'), db.getAll('workouts'), db.getAll('templates'), db.getAll('customExercises'),
     db.get('meta', 'preImportSnapshot'),
   ]);
   S.settings = { ...DEFAULTS, ...(settings || {}) };
@@ -250,7 +232,6 @@ async function loadAll() {
   S.templates = (templates || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   S.custom = custom || [];
   S.customMap = Object.fromEntries(S.custom.map(c => [c.id, c]));
-  S.images = Object.fromEntries(images || []);
   S.session = active ? { mode: 'active', w: active, open: false } : null;
   S.snapshotAt = snap ? snap.exportDate : null;
 }
@@ -375,20 +356,27 @@ function filterExercises({ q, group, equip }) {
   if (toks.length) { const t0 = toks.join(' '); list.sort((a, b) => (b.name.toLowerCase().startsWith(t0) ? 1 : 0) - (a.name.toLowerCase().startsWith(t0) ? 1 : 0)); }
   return list;
 }
-const exRow = e => `<button class="ex-row" data-a="exOpen" data-id="${e.id}">${thumb(e)}<span class="ex-row-t"><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}</span><span class="muted xs">${esc(e.equipment)}${e.builtIn ? '' : ', custom'}</span></span>${S.favs.has(e.id) ? `<span class="fav-on" aria-label="Favorite">${ICON.star}</span>` : ''}</button>`;
+const exRow = (e, pick) => pick ? `<div class="ex-row pick"><button class="ex-add" data-a="pickAdd" data-id="${e.id}"><span class="ex-row-t"><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}, ${esc(e.equipment)}</span></span><span class="add-pill">${ICON.plus}Add</span></button><button class="icon-btn" data-a="exOpen" data-id="${e.id}" aria-label="About ${esc(e.name)}">${ICON.info}</button></div>` : `<button class="ex-row" data-a="exOpen" data-id="${e.id}"><span class="ex-row-t"><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}</span><span class="muted xs">${esc(e.equipment)}${e.builtIn ? '' : ', custom'}</span></span>${S.favs.has(e.id) ? `<span class="fav-on" aria-label="Favorite">${ICON.star}</span>` : ''}</button>`;
 function exListHTML(o) {
   const filtered = o.q || o.group !== 'all' || o.equip;
   const list = filterExercises(o);
+  const pick = o.type === 'picker';
+  const row = e => exRow(e, pick);
   let h = '';
-  if (o.group !== 'all') { const g = FILTER_GROUPS.find(x => x[0] === o.group); h += `<div class="group-map">${muscleMapSVG(g[2], [])}</div>`; }
+  const typed = (o.q || '').trim();
+  const quick = pick && typed && !allExercises().some(e => e.name.toLowerCase() === typed.toLowerCase())
+    ? `<button class="btn ${list.length ? '' : 'primary'} block quick" data-a="quickAdd">${ICON.plus} Add “${esc(typed)}” as a new exercise</button>` : '';
+  if (quick && !list.length) h += quick;
+  if (pick && !typed) h += `<p class="muted sm pick-tip">Type any exercise name to add it, even if it’s not in the list.</p>`;
   if (!filtered) {
     const rec = S.recents.map(id => ex(id)).filter(e => !e.missing && !e.archived).slice(0, 6);
     const fav = [...S.favs].map(id => ex(id)).filter(e => !e.missing && !e.archived).sort((a, b) => a.name.localeCompare(b.name));
-    if (rec.length) h += `<h3 class="list-h">Recently used</h3><div class="list">${rec.map(exRow).join('')}</div>`;
-    if (fav.length) h += `<h3 class="list-h">Favorites</h3><div class="list">${fav.map(exRow).join('')}</div>`;
+    if (rec.length) h += `<h3 class="list-h">Recently used</h3><div class="list">${rec.map(row).join('')}</div>`;
+    if (fav.length) h += `<h3 class="list-h">Favorites</h3><div class="list">${fav.map(row).join('')}</div>`;
     h += `<h3 class="list-h">All exercises (${list.length})</h3>`;
   } else h += `<h3 class="list-h">${plural(list.length, 'result')}</h3>`;
-  h += list.length ? `<div class="list">${list.map(exRow).join('')}</div>` : empty('No matching exercises', 'Try a different search, or create a custom exercise.', '<button class="btn" data-a="customNew">New exercise</button>');
+  h += list.length ? `<div class="list">${list.map(row).join('')}</div>` : pick ? '' : empty('No matching exercises', 'Try a different search, or create a custom exercise.', '<button class="btn" data-a="customNew">New exercise</button>');
+  if (quick && list.length) h += quick;
   return h;
 }
 const chips = (cur, act) => `<div class="chips" role="group" aria-label="Muscle group">${FILTER_GROUPS.map(([k, l]) => `<button class="chip" data-a="${act}" data-g="${k}" aria-pressed="${cur === k}">${l}</button>`).join('')}</div>`;
@@ -436,7 +424,7 @@ function vProgress() {
     const seen = new Map();
     for (const w of S.workouts) for (const we of w.exercises) if (!seen.has(we.exerciseId) && we.sets.some(eligible)) seen.set(we.exerciseId, w.date);
     body = seen.size ? `<div class="list">${[...seen].map(([id, d]) => { const e = ex(id); const r = records(exerciseSessions(new Set([id])));
-        return `<button class="ex-row" data-a="exProg" data-id="${id}">${thumb(e)}<span class="ex-row-t"><span class="n">${esc(e.name)}</span>
+        return `<button class="ex-row" data-a="exProg" data-id="${id}"><span class="ex-row-t"><span class="n">${esc(e.name)}</span>
         <span class="muted sm">Last ${fmtDate(d)}, ${plural(r.sessions, 'session')}</span><span class="muted xs">${isTime(e) ? `Best ${r.maxReps} s` : `Best est. 1RM ${fmtW(r.e1)} ${unit()}`}</span></span></button>`; }).join('')}</div>`
       : empty('No exercise history yet', 'Complete a workout and your strength progress appears here.', '');
   }
@@ -471,7 +459,6 @@ function vMore() {
   <h2 class="sec-h">Exercises</h2>
   <div class="list">
     <button class="row" data-a="customList"><span class="row-main"><span class="n">Custom exercises</span><span class="muted sm">${plural(S.custom.filter(c => !c.archived).length, 'exercise')}</span></span></button>
-    <button class="row" data-a="assetReport"><span class="row-main"><span class="n">Exercise images</span><span class="muted sm">${Object.keys(S.assets).length} of ${EXERCISES.length} have illustrations</span></span></button>
   </div>
   <h2 class="sec-h">Demo data</h2>
   <div class="card settings"><p class="muted sm">Sample workouts, measurements and templates for trying the app. Demo records are tagged and never replace your own data.</p>
@@ -535,8 +522,9 @@ function exCardHTML(we, i, w, flagged) {
   const e = ex(we.exerciseId); const st = S.settings; const time = isTime(e);
   const last = lastPerformance(we.exerciseId, w); const tgt = we.target;
   return `<article class="ex-card" aria-label="${esc(e.name)}">
-    <div class="ex-head"><button class="ex-name" data-a="exInfo" data-id="${e.id}">${thumb(e)}<span><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}</span></span></button>
+    <div class="ex-head"><button class="ex-name" data-a="exInfo" data-id="${e.id}"><span><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}</span></span></button>
     <button class="icon-btn" data-a="exMenu" data-ei="${i}" aria-label="Options for ${esc(e.name)}">${ICON.dots}</button></div>
+    <div class="ex-sets"><span>Sets</span><div class="stepper"><button data-a="exSets" data-ei="${i}" data-d="-1" aria-label="Remove a set" ${we.sets.length <= 1 ? 'disabled' : ''}>−</button><output>${we.sets.length}</output><button data-a="exSets" data-ei="${i}" data-d="1" aria-label="Add a set">+</button></div></div>
     ${tgt ? `<p class="target">Target ${tgt.sets} × ${repRange(tgt)}${time ? ' s' : ''}${tgt.rpe ? ` at RPE ${tgt.rpe}` : ''}</p>` : ''}
     ${last ? `<div class="last"><p class="last-h">Last time, ${fmtDate(last.w.date)}</p><ol>${last.sets.map((s, n) => `<li><span class="ln">${n + 1}</span>${fmtSet(s, e)}</li>`).join('')}</ol></div>` : '<p class="last none">First time logging this exercise</p>'}
     <div class="set-h ${st.showRPE ? 'rpe' : ''}"><span>Set</span><span>${time ? 'Load ' + unit() : unit()}</span><span>${time ? 'Sec' : 'Reps'}</span>${st.showRPE ? '<span>RPE</span>' : ''}<span class="sr">Done</span></div>
@@ -588,22 +576,13 @@ OV.picker = o => `<div class="ov">${ovHead(backBtn('Cancel'), o.mode === 'templa
 
 OV.preview = o => {
   const e = ex(o.id); const fam = familyOf(e);
-  const frames = ['start', 'mid', 'end'].map((f, i) => [assetURL(e, f), ['Start', 'Middle', 'Finish'][i]]).filter(x => x[0]);
-  const custImg = !e.builtIn && S.images[e.id];
-  let visual;
-  if (frames.length && e.builtIn) visual = `<div class="frames">${frames.map(([u, l]) => `<figure><img src="${esc(u)}" alt="${esc(e.name)}, ${l.toLowerCase()} position" decoding="async"><figcaption>${l}</figcaption></figure>`).join('')}</div>`;
-  else if (custImg) visual = `<img class="hero-img" src="${custImg}" alt="${esc(e.name)} illustration">`;
-  else visual = `<div class="noframes">${ICON.image}<span>Movement illustration not added yet</span></div>`;
   const canAdd = o.mode === 'workout' || o.mode === 'template' || (o.mode === 'browse' && S.session && S.session.mode === 'active' && !o.fromSession);
   const addLabel = o.mode === 'template' ? 'Add to template' : o.mode === 'workout' ? 'Add to workout' : 'Add to current workout';
   const dl = [['Primary', muscleLabel(e)], ['Secondary', e.secondary.map(m => MUSCLES[m]).join(', ') || 'None'], ['Equipment', e.equipment], ['Movement', e.patternLabel || '–'], ['Type', e.unilateral ? 'One side at a time' : 'Both sides together'], ['Logged as', isTime(e) ? 'Time (seconds)' : 'Weight × reps']];
   return `<div class="ov">${ovHead(backBtn(), '', `<button class="icon-btn ${S.favs.has(e.id) ? 'fav-on' : ''}" data-a="favToggle" data-id="${e.id}" aria-pressed="${S.favs.has(e.id)}" aria-label="Favorite">${ICON.star}</button>`)}
   <div class="ov-body pv">
     <h1 class="pv-t">${esc(e.name)}</h1>
-    ${visual}
-    ${fam.length > 1 ? `<h3 class="list-h">Choose variation</h3><div class="vars">${fam.map(v => `<button class="var" data-a="pvVar" data-id="${v.id}" aria-pressed="${v.id === e.id}">${thumb(v, 'thumb sm')}<span class="n">${esc(v.variation || v.name)}</span><span class="muted xs">${muscleLabel(v)}</span></button>`).join('')}</div>` : ''}
-    <figure class="mm-big" role="img" aria-label="Muscle diagram. Primary: ${esc(muscleLabel(e))}. Secondary: ${esc(e.secondary.map(m => MUSCLES[m]).join(', ') || 'none')}.">${muscleMapSVG(e.primary, e.secondary)}
-      <figcaption><span class="key pri"></span>Primary <span class="key sec"></span>Secondary</figcaption></figure>
+    ${fam.length > 1 ? `<h3 class="list-h">Choose variation</h3><div class="vars">${fam.map(v => `<button class="var" data-a="pvVar" data-id="${v.id}" aria-pressed="${v.id === e.id}"><span class="n">${esc(v.variation || v.name)}</span><span class="muted xs">${muscleLabel(v)}</span></button>`).join('')}</div>` : ''}
     <dl class="dl">${dl.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
     ${e.builtIn ? `<p class="pv-desc">${esc(describe(e))}</p>` : ''}
     ${e.instructions && e.instructions.length ? `<h3 class="list-h">Movement</h3><ol class="steps">${e.instructions.map(s => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}
@@ -621,7 +600,7 @@ OV.tplEdit = o => {
   <div class="ov-body">
     <label class="field"><span>Template name</span><input data-in="tName" value="${esc(d.name)}" placeholder="e.g. Push day" enterkeyhint="done"></label>
     ${d.exercises.length ? d.exercises.map((te, i) => { const e = ex(te.exerciseId); return `<div class="card te">
-      <div class="ex-head"><button class="ex-name" data-a="exInfo" data-id="${e.id}">${thumb(e)}<span><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}</span></span></button>
+      <div class="ex-head"><button class="ex-name" data-a="exInfo" data-id="${e.id}"><span><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}</span></span></button>
       <div class="te-move"><button class="icon-btn" data-a="teMove" data-i="${i}" data-d="-1" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>${ICON.up}</button><button class="icon-btn" data-a="teMove" data-i="${i}" data-d="1" aria-label="Move down" ${i === d.exercises.length - 1 ? 'disabled' : ''}>${ICON.down}</button><button class="icon-btn" data-a="teRemove" data-i="${i}" aria-label="Remove ${esc(e.name)}">${ICON.x}</button></div></div>
       <div class="te-grid"><div><span class="stat-l">Sets</span><div class="stepper"><button data-a="teSets" data-i="${i}" data-d="-1" aria-label="Fewer sets">−</button><output>${te.sets}</output><button data-a="teSets" data-i="${i}" data-d="1" aria-label="More sets">+</button></div></div>
       <div><span class="stat-l">${isTime(e) ? 'Seconds' : 'Rep range'}</span><div class="range"><input class="in" inputmode="numeric" data-in="teMin" data-i="${i}" value="${te.repMin ?? ''}" aria-label="Minimum"><span>–</span><input class="in" inputmode="numeric" data-in="teMax" data-i="${i}" value="${te.repMax ?? ''}" aria-label="Maximum"></div></div>
@@ -640,7 +619,7 @@ OV.workout = o => {
   <div class="ov-body">
     <h1 class="pv-t">${esc(w.name)}</h1><p class="muted">${fmtDate(w.date, { weekday: 'long', month: 'long', day: 'numeric' })}, ${fmtTime(w.startTime)}</p>
     ${summaryGrid(st, prs.length)}${prsList(prs)}
-    ${w.exercises.map(we => { const e = ex(we.exerciseId); return `<div class="card wd"><button class="ex-name" data-a="exProg" data-id="${e.id}">${thumb(e)}<span class="n">${esc(e.name)}</span></button>
+    ${w.exercises.map(we => { const e = ex(we.exerciseId); return `<div class="card wd"><button class="ex-name" data-a="exProg" data-id="${e.id}"><span class="n">${esc(e.name)}</span></button>
       <ol class="wd-sets">${we.sets.map(s => `<li class="${s.done ? '' : 'undone'}">${fmtSet(s, e)}${s.rpe ? ` <span class="muted xs">RPE ${s.rpe}</span>` : ''}${fl.has(s.id) ? ' <span class="pr-pill">PR</span>' : ''}${s.done ? '' : ' <span class="muted xs">not completed</span>'}</li>`).join('')}</ol>
       ${we.notes ? `<p class="ex-note">${esc(we.notes)}</p>` : ''}</div>`; }).join('')}
     ${w.notes ? `<div class="card"><h3 class="list-h">Notes</h3><p>${esc(w.notes)}</p></div>` : ''}
@@ -684,7 +663,7 @@ OV.exprog = o => {
     : `${stat('Best weight', W(r.maxW), unit())}${stat('Best est. 1RM', W(r.e1), unit())}${stat('Best set', r.e1Set ? `${W(r.e1Set.weight || 0)} × ${r.e1Set.reps}` : '–', '')}
        ${stat('Best session volume', fmtVol(r.sessVol), unit())}${stat('Sessions', r.sessions, '')}${stat('Working sets', r.sets, '')}`;
   return `<div class="ov">${ovHead(backBtn(), 'Progress', `<button class="btn ghost sm" data-a="exOpenInfo" data-id="${e.id}">Details</button>`)}
-  <div class="ov-body"><div class="ex-name big">${thumb(e)}<span><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}</span></span></div>
+  <div class="ov-body"><div class="ex-name big"><span><span class="n">${esc(e.name)}</span><span class="muted sm">${muscleLabel(e)}</span></span></div>
     ${fam.length > 1 ? `<button class="toggle-row compact" data-a="progCombine" role="switch" aria-checked="${!!o.combine}"><span>Include all ${esc(e.family)} variations</span><span class="sw"></span></button>` : ''}
     ${r.sessions ? `<div class="stat-grid three">${stats}</div>
     ${seg('progRange', o.range, RANGES.map(x => [x[0], x[0]]), 'Time range')}
@@ -716,7 +695,7 @@ OV.customList = () => {
 };
 
 OV.customEdit = o => {
-  const d = o.draft; const img = o.image;
+  const d = o.draft;
   return `<div class="ov">${ovHead('<button class="btn ghost sm" data-a="pop">Cancel</button>', o.isNew ? 'New exercise' : 'Edit exercise', '<button class="btn primary sm" data-a="customSave">Save</button>')}
   <div class="ov-body">
     <label class="field"><span>Name</span><input data-in="cName" value="${esc(d.name)}" placeholder="e.g. Hammer Strength Row"></label>
@@ -728,27 +707,10 @@ OV.customEdit = o => {
     <div class="field"><span>Logged as</span>${seg('cMetric', d.metric, [['reps', 'Weight × reps'], ['time', 'Time (seconds)']], 'Logged as')}</div>
     <button class="toggle-row" data-a="cUni" role="switch" aria-checked="${!!d.unilateral}"><span>One side at a time</span><span class="sw"></span></button>
     <label class="field"><span>Notes</span><textarea data-in="cNotes" rows="3">${esc(d.notes || '')}</textarea></label>
-    <div class="field"><span>Image or diagram</span>${img ? `<img class="hero-img" src="${img}" alt="Custom exercise image"><button class="btn ghost block" data-a="cImgRemove">Remove image</button>` : ''}
-      <label class="btn block file-btn">${img ? 'Replace image' : 'Add image'}<input type="file" accept="image/*" data-change="cImg" hidden></label></div>
     ${!o.isNew ? '<button class="btn danger-ghost block" data-a="customDelete">Delete exercise</button>' : ''}
   </div></div>`;
 };
 
-OV.assets = o => {
-  const r = o.results;
-  return `<div class="ov">${ovHead(backBtn(), 'Exercise images')}
-  <div class="ov-body">
-    <p>LiftLog shows illustrations for any exercise listed in <code>exercises/assets.json</code>. Until then, each exercise shows its muscle diagram.</p>
-    <p class="muted sm">File layout: <code>exercises/&lt;area&gt;/&lt;exercise-id&gt;/thumb.webp</code>, plus optional <code>start.webp</code>, <code>mid.webp</code>, <code>end.webp</code>, <code>muscles.webp</code>. Example: <code>${EX_BY_ID['incline-dumbbell-bench-press'].assetPath}/thumb.webp</code></p>
-    <button class="btn primary block" data-a="assetScan" ${o.scanning ? 'disabled' : ''}>${o.scanning ? `Scanning… ${o.progress || 0}%` : 'Scan for image files'}</button>
-    <p class="muted xs">Scanning checks the website for every expected file. It needs an internet connection.</p>
-    ${r ? `<div class="stat-grid three">${stat('With thumbnail', r.thumbs, '')}${stat('With movement', r.frames, '')}${stat('Broken links', r.broken.length, '')}</div>
-      ${r.broken.length ? `<div class="card"><h3 class="list-h">Listed in assets.json but missing</h3><ul class="tips">${r.broken.map(b => `<li><code>${esc(b)}</code></li>`).join('')}</ul></div>` : ''}
-      <h3 class="list-h">Updated assets.json</h3><p class="muted sm">Copy this and paste it over the contents of <code>exercises/assets.json</code> on GitHub.</p>
-      <textarea class="code" readonly rows="8">${esc(r.json)}</textarea><button class="btn block" data-a="assetCopy">Copy assets.json</button>
-      <details><summary>${EXERCISES.length - r.thumbs} exercises without a thumbnail</summary><ul class="tips mono">${r.missing.map(m => `<li>${esc(m)}</li>`).join('')}</ul></details>` : ''}
-  </div></div>`;
-};
 
 OV.import = o => {
   const d = o.data; const s = o.summary;
@@ -764,13 +726,10 @@ OV.import = o => {
 
 // =================================================================== WORKOUT OPERATIONS
 function defaultName() { const h = new Date().getHours(); return h < 12 ? 'Morning workout' : h < 17 ? 'Afternoon workout' : 'Evening workout'; }
+const blankSet = (type = 'working') => ({ id: uid(), weight: null, reps: null, rpe: null, type, done: false, note: '' });
 function newWorkoutExercise(exId, n, target, notes, w) {
-  const last = lastPerformance(exId, w);
   const sets = [];
-  for (let i = 0; i < n; i++) {
-    const p = last ? last.sets[i] || last.sets.at(-1) : null;
-    sets.push({ id: uid(), weight: p ? p.weight : null, reps: null, rpe: null, type: 'working', done: false, note: '' });
-  }
+  for (let i = 0; i < n; i++) sets.push(blankSet());
   touchRecent(exId);
   return { id: uid(), exerciseId: exId, notes: notes || '', target: target || null, sets };
 }
@@ -785,7 +744,7 @@ async function startWorkout(tpl, src) {
   if (tpl) for (const te of tpl.exercises) w.exercises.push(newWorkoutExercise(te.exerciseId, te.sets, { sets: te.sets, repMin: te.repMin, repMax: te.repMax, rpe: te.rpe }, te.notes, w));
   if (src) for (const we of src.exercises) {
     const x = newWorkoutExercise(we.exerciseId, we.sets.length || S.settings.defaultSets, we.target, '', w);
-    x.sets.forEach((s, i) => { const o = we.sets[i]; if (o) { s.weight = o.weight; s.type = o.type; } });
+    x.sets.forEach((s, i) => { const o = we.sets[i]; if (o) s.type = o.type; });
     w.exercises.push(x);
   }
   S.session = { mode: 'active', w, open: true };
@@ -841,7 +800,7 @@ function buildBackup() {
     app: 'LiftLog', schemaVersion: SCHEMA_VERSION, appVersion: APP_VERSION, exportDate: new Date().toISOString(),
     builtInExerciseVersion: EXERCISE_DB_VERSION, weightStorageUnit: 'lb',
     note: 'Weights are stored in pounds. Sets are stored inside each workout exercise.',
-    bodyMeasurements: S.meas, customExercises: S.custom, customExerciseImages: S.images,
+    bodyMeasurements: S.meas, customExercises: S.custom,
     workouts: S.workouts, templates: S.templates, favorites: [...S.favs], recents: S.recents, settings: S.settings,
     activeWorkout: S.session && S.session.mode === 'active' ? S.session.w : null,
   };
@@ -939,25 +898,6 @@ async function removeDemo() {
   await db.batch(ops); await loadAll();
 }
 
-// =================================================================== ASSET SCAN
-async function scanAssets(o) {
-  const found = {}; const list = EXERCISES; let doneN = 0; const broken = [];
-  const head = async url => { try { const r = await fetch(url, { method: 'HEAD', cache: 'no-store' }); return r.ok; } catch { return false; } };
-  const queue = [...list];
-  const worker = async () => {
-    while (queue.length) {
-      const e = queue.shift(); const have = [];
-      for (const f of ASSET_FRAMES) if (await head(`${e.assetPath}/${f}.webp`)) have.push(f);
-      if (have.length) found[e.id] = have;
-      for (const f of S.assets[e.id] || []) if (!have.includes(f)) broken.push(`${e.assetPath}/${f}.webp`);
-      doneN++;
-      if (doneN % 10 === 0) { o.progress = Math.round(doneN / list.length * 100); if (topOv() === o) renderOverlays(); }
-    }
-  };
-  await Promise.all(Array.from({ length: 8 }, worker));
-  const json = JSON.stringify({ version: 1, note: 'Lists which image files exist for each exercise id. Generated by LiftLog > More > Exercise images.', exercises: found }, null, 2);
-  return { thumbs: Object.values(found).filter(v => v.includes('thumb')).length, frames: Object.values(found).filter(v => v.includes('start')).length, broken, json, missing: list.filter(e => !(found[e.id] || []).includes('thumb')).map(e => `${e.assetPath}/thumb.webp`) };
-}
 
 // =================================================================== ACTIONS
 const A = {};
@@ -980,25 +920,31 @@ A.addSet = el => {
   saveSession(true); renderSession();
   $(`.ses-body [data-in="r"][data-ei="${el.dataset.ei}"][data-si="${we.sets.length - 1}"]`)?.focus();
 };
+A.exSets = async el => {
+  const we = S.session.w.exercises[+el.dataset.ei];
+  if (+el.dataset.d > 0) { we.sets.push(blankSet()); }
+  else {
+    if (we.sets.length <= 1) return;
+    const s = we.sets.at(-1);
+    if (populated(s) && !(await confirmDlg(`Remove set ${we.sets.length}?`, 'It already has a weight or reps entered.', 'Remove', true))) return;
+    we.sets.pop();
+  }
+  saveSession(true); renderSession();
+};
 A.bump = el => {
   const s = setOf(el); const input = el.parentElement.querySelector('input');
-  const cur = s.weight != null ? toDisp(s.weight) : num(input.placeholder) ?? 0;
+  const cur = s.weight != null ? toDisp(s.weight) : 0;
   const v = Math.max(0, Math.round((cur + +el.dataset.d * S.settings.increment) * 100) / 100);
   s.weight = fromDisp(v); input.value = String(v); saveSession();
 };
 A.toggleDone = el => {
   const s = setOf(el); const row = el.closest('.set-row'); const we = S.session.w.exercises[+el.dataset.ei]; const e = ex(we.exerciseId);
   if (!s.done) {
-    if (s.reps == null) {
-      const ph = row.querySelector('[data-in="r"]').placeholder;
-      if (/^\d+$/.test(ph)) s.reps = +ph; else { toast(`Enter ${isTime(e) ? 'seconds' : 'reps'} first`); row.querySelector('[data-in="r"]').focus(); return; }
-    }
     if (s.weight == null) {
-      const ph = num(row.querySelector('[data-in="w"]').placeholder);
-      if (ph != null) s.weight = fromDisp(ph);
-      else if (NO_LOAD_EQUIP.has(e.equipment) || isTime(e)) s.weight = 0;
-      else { toast('Enter the weight first'); row.querySelector('[data-in="w"]').focus(); return; }
+      if (NO_LOAD_EQUIP.has(e.equipment) || isTime(e)) s.weight = 0;
+      else { toast('Enter the weight for this set'); row.querySelector('[data-in="w"]').focus(); return; }
     }
+    if (s.reps == null) { toast(`Enter ${isTime(e) ? 'seconds' : 'reps'} for this set`); row.querySelector('[data-in="r"]').focus(); return; }
   }
   s.done = !s.done; saveSession(true); renderSession();
 };
@@ -1129,8 +1075,27 @@ A.exOpen = el => { const t = topOv(); push({ type: 'preview', id: el.dataset.id,
 A.exOpenInfo = el => push({ type: 'preview', id: el.dataset.id, mode: 'browse', fromSession: true });
 A.pvVar = el => { topOv().id = el.dataset.id; renderOverlays(); };
 A.favToggle = el => { const id = el.dataset.id; S.favs.has(id) ? S.favs.delete(id) : S.favs.add(id); saveFavs(); renderOverlays(); if (S.tab === 'exercises') renderView(); };
+function addPicked(id) {
+  const pk = S.stack.find(x => x.type === 'picker'); const mode = pk ? pk.mode : 'workout';
+  S.stack = S.stack.filter(x => x.type !== 'picker' && x.type !== 'preview');
+  if (mode === 'template') {
+    const ed = S.stack.find(x => x.type === 'tplEdit');
+    ed.draft.exercises.push({ id: uid(), exerciseId: id, sets: S.settings.defaultSets, repMin: 8, repMax: 12, rpe: null, notes: '' });
+    touchRecent(id); renderOverlays(); toast(`Added ${ex(id).name}`); return;
+  }
+  renderOverlays(); addExerciseToSession(id);
+}
+A.pickAdd = el => addPicked(el.dataset.id);
+A.quickAdd = async () => {
+  const name = topOv().q.trim(); if (!name) return;
+  const c = { id: 'c-' + uid(), name, family: name, exerciseFamily: name, variation: '', primary: 'other', primaryMuscle: 'other', emphasis: '', secondary: [], secondaryMuscles: [], equipment: 'Other', metric: 'reps', unilateral: false, unilateralOrBilateral: 'bilateral', notes: '', movementPattern: 'custom', patternLabel: 'Custom exercise', instructions: [], tips: [], builtIn: false, archived: false, createdAt: Date.now(), updatedAt: Date.now() };
+  await db.put('customExercises', c);
+  S.custom.push(c); S.customMap[c.id] = c;
+  addPicked(c.id);
+};
 A.pvAdd = () => {
   const o = topOv();
+  if (S.stack.some(x => x.type === 'picker')) return addPicked(o.id);
   if (o.mode === 'template') {
     const ed = S.stack.find(x => x.type === 'tplEdit');
     ed.draft.exercises.push({ id: uid(), exerciseId: o.id, sets: S.settings.defaultSets, repMin: 8, repMax: 12, rpe: null, notes: '' });
@@ -1168,24 +1133,20 @@ A.bodyDelete = async () => {
 
 // custom exercises
 A.customList = () => push({ type: 'customList' });
-A.customNew = () => push({ type: 'customEdit', isNew: true, image: null, draft: { id: 'c-' + uid(), name: '', family: '', variation: '', primary: 'chest', secondary: [], equipment: 'Dumbbell', metric: 'reps', unilateral: false, notes: '' } });
-A.customEdit = el => { const c = S.customMap[el.dataset.id]; push({ type: 'customEdit', isNew: false, image: S.images[c.id] || null, draft: clone(c) }); };
+A.customNew = () => push({ type: 'customEdit', isNew: true, draft: { id: 'c-' + uid(), name: '', family: '', variation: '', primary: 'chest', secondary: [], equipment: 'Dumbbell', metric: 'reps', unilateral: false, notes: '' } });
+A.customEdit = el => { const c = S.customMap[el.dataset.id]; push({ type: 'customEdit', isNew: false, draft: clone(c) }); };
 A.cSec = el => { const d = topOv().draft; const k = el.dataset.k; d.secondary = d.secondary.includes(k) ? d.secondary.filter(x => x !== k) : [...d.secondary, k]; renderOverlays(); };
 A.cMetric = el => { topOv().draft.metric = el.dataset.v; renderOverlays(); };
 A.cUni = () => { const d = topOv().draft; d.unilateral = !d.unilateral; renderOverlays(); };
-A.cImgRemove = () => { topOv().image = null; renderOverlays(); };
 A.customSave = async () => {
   const o = topOv(); const d = o.draft; d.name = d.name.trim();
   if (!d.name) { toast('Give the exercise a name'); return; }
   if (allExercises().some(e => e.id !== d.id && e.name.toLowerCase() === d.name.toLowerCase())) { toast('An exercise with that name already exists'); return; }
   const c = { ...d, family: d.family.trim() || d.name, exerciseFamily: d.family.trim() || d.name, variation: d.variation.trim(), primaryMuscle: d.primary, secondary: d.secondary.filter(m => m !== d.primary), emphasis: '', movementPattern: 'custom', patternLabel: 'Custom exercise', unilateralOrBilateral: d.unilateral ? 'unilateral' : 'bilateral', instructions: [], tips: [], builtIn: false, archived: false, createdAt: d.createdAt || Date.now(), updatedAt: Date.now() };
   c.secondaryMuscles = c.secondary;
-  const ops = [{ store: 'customExercises', op: 'put', value: c }];
-  ops.push(o.image ? { store: 'images', op: 'put', key: c.id, value: o.image } : { store: 'images', op: 'delete', key: c.id });
-  await db.batch(ops);
+  await db.put('customExercises', c);
   S.custom = S.custom.filter(x => x.id !== c.id).concat(c); S.customMap[c.id] = c;
-  if (o.image) S.images[c.id] = o.image; else delete S.images[c.id];
-  resetThumbs(); pop(); renderOverlays(); renderView(); toast('Exercise saved');
+  pop(); renderOverlays(); renderView(); toast('Exercise saved');
 };
 A.customDelete = async () => {
   const o = topOv(); const id = o.draft.id;
@@ -1196,8 +1157,8 @@ A.customDelete = async () => {
     S.custom = S.custom.map(x => (x.id === id ? c : x)); S.customMap[id] = c;
   } else {
     if (!(await confirmDlg('Delete this exercise?', '', 'Delete', true))) return;
-    await db.batch([{ store: 'customExercises', op: 'delete', key: id }, { store: 'images', op: 'delete', key: id }]);
-    S.custom = S.custom.filter(x => x.id !== id); delete S.customMap[id]; delete S.images[id];
+    await db.del('customExercises', id);
+    S.custom = S.custom.filter(x => x.id !== id); delete S.customMap[id];
   }
   S.stack = S.stack.filter(x => !(x.type === 'preview' && x.id === id)); pop(); renderView();
 };
@@ -1229,9 +1190,6 @@ A.undoImport = async () => {
 };
 A.demoLoad = async () => { if (!(await confirmDlg('Load demo data?', 'Adds sample workouts, measurements and templates. Your own data isn’t changed, and you can remove the demo data at any time.', 'Load'))) return; await loadDemo(); render(); toast('Demo data loaded'); };
 A.demoRemove = async () => { if (!(await confirmDlg('Remove demo data?', 'Only records created by “Load demo data” are removed.', 'Remove', true))) return; await removeDemo(); render(); toast('Demo data removed'); };
-A.assetReport = () => push({ type: 'assets', results: null, scanning: false });
-A.assetScan = async () => { const o = topOv(); o.scanning = true; o.progress = 0; renderOverlays(); o.results = await scanAssets(o); o.scanning = false; renderOverlays(); };
-A.assetCopy = async () => { try { await navigator.clipboard.writeText(topOv().results.json); toast('Copied'); } catch { toast('Select the text and copy it manually'); } };
 
 // onboarding
 A.onbNext = () => { S.onbStep++; render(); };
@@ -1285,25 +1243,12 @@ const CHANGE = {
     try { data = migrateBackup(JSON.parse(await f.text())); errors = validateBackup(data); } catch { errors = ['The file couldn’t be read as JSON.']; }
     push({ type: 'import', data, errors, summary: errors.length ? [] : backupSummary(data) });
   },
-  cImg: async t => {
-    const f = t.files[0]; t.value = ''; if (!f) return;
-    try { topOv().image = await resizeImage(f, 720); renderOverlays(); } catch { toast('That image couldn’t be read'); }
-  },
 };
-function resizeImage(file, max) {
-  return new Promise((res, rej) => {
-    const img = new Image(); const url = URL.createObjectURL(file);
-    img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.85)); };
-    img.onerror = () => { URL.revokeObjectURL(url); rej(); };
-    img.src = url;
-  });
-}
 
 // =================================================================== STARTUP
 function applyTheme() {
   const t = S.settings.theme; const r = document.documentElement;
   if (t === 'system') r.removeAttribute('data-theme'); else r.dataset.theme = t;
-  colorCache = null; resetThumbs();
 }
 function bindEvents() {
   document.addEventListener('click', e => {
@@ -1329,7 +1274,6 @@ async function init() {
   bindEvents();
   try { await loadAll(); }
   catch (err) { document.body.innerHTML = `<div class="fatal"><h1>LiftLog couldn’t open its database</h1><p>${esc(err.message)}</p><p>Close LiftLog completely and open it again. Your data hasn’t been deleted.</p></div>`; return; }
-  try { const a = await fetch('exercises/assets.json', { cache: 'no-cache' }).then(r => r.json()); S.assets = a.exercises || {}; } catch { S.assets = {}; }
   applyTheme(); S.ready = true;
   if (S.session) S.session.open = true;
   render(); startTimer();
